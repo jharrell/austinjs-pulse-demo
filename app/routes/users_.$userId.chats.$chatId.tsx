@@ -3,6 +3,8 @@ import { useLoaderData } from "@remix-run/react";
 import { useEffect, useState } from "react";
 import { prisma } from "~/db.server";
 
+const sessionId = crypto.randomUUID();
+
 export const loader = async ({ params }: LoaderFunctionArgs) => {
   if (!params.chatId || !params.userId) {
     throw new Response("Not Found", { status: 404 });
@@ -55,6 +57,22 @@ export const action = async ({ request, params }: ActionFunctionArgs) => {
 export default function Chat() {
   const { chat, user } = useLoaderData<typeof loader>();
 
+  const [messages, setMessages] = useState(chat.messages);
+  const [error, setError] = useState(false);
+
+  useEffect(() => {
+    const source = new EventSource(`/users/${user.id}/chats/${chat.id}/messages?sessionId=${sessionId}`);
+    source.addEventListener(`message-${chat.id}`, (e) => {
+      setMessages((prev) => [...prev, JSON.parse(e.data)]);
+    });
+    source.addEventListener('error', () => setError(true));
+    return () => source.close();
+  }, []);
+
+  if (error) {
+    throw error;
+  }
+
   return (
     <div className="flex flex-col h-screen bg-gray-100">
       <header className="bg-white shadow">
@@ -63,12 +81,12 @@ export default function Chat() {
         </div>
       </header>
       <main className="flex-grow overflow-y-auto p-4">
-        {chat.messages.length === 0 && (
+        {messages.length === 0 && (
           <p className="text-center text-gray-500 my-8">No messages yet</p>
         )}
-        {chat.messages.length > 0 && (
+        {messages.length > 0 && (
           <ul className="space-y-4">
-            {chat.messages.map((message) => (
+            {messages.map((message) => (
               <li key={message.id} className={`flex items-start ${message.user.name === user.name ? 'justify-end' : 'justify-start'}`}>
                 {message.user.name !== user.name && (
                   <div className="flex-shrink-0 mr-3">
